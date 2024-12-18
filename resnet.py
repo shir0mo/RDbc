@@ -424,7 +424,7 @@ class BN_layer(nn.Module):
             nn.LayerNorm(512),
             nn.Linear(512, num_class)
         )
-        
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -465,12 +465,16 @@ class BN_layer(nn.Module):
         feature = torch.cat([l1,l2,x[2]],1)
         output = self.bn_layer(feature)
 
+        # Center loss
+        feature_center = self.fc1(output)
+        pred_class = self.mlp_head(feature_center)
+
         print(output.shape)
         #x = self.avgpool(feature_d)
         #x = torch.flatten(x, 1)
         #x = self.fc(x)
 
-        return output.contiguous()
+        return output.contiguous(), feature_center, pred_class
 
     def forward(self, x: Tensor) -> Tensor:
         return self._forward_impl(x)
