@@ -64,20 +64,21 @@ def train(_class_):
     learning_rate = 0.005
     batch_size = 16
     image_size = 256
+    num_class = 15
         
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(device)
 
     data_transform, gt_transform = get_data_transforms(image_size, image_size)
-    train_path = './mvtec/' + _class_ + '/train'
-    test_path = './mvtec/' + _class_
-    ckp_path = './checkpoints/' + 'wres50_'+_class_+'.pth'
+    train_path = '../mvtec/' + _class_ + '/train'
+    test_path = '../mvtec/' + _class_
+    ckp_path = '../checkpoints/' + 'wres50_'+_class_+'.pth'
     train_data = ImageFolder(root=train_path, transform=data_transform)
     test_data = MVTecDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, phase="test")
     train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
 
-    encoder, bn = wide_resnet50_2(pretrained=True)
+    encoder, bn = wide_resnet50_2(num_class, pretrained=True)
     encoder = encoder.to(device)
     bn = bn.to(device)
     encoder.eval()
