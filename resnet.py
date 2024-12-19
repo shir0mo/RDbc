@@ -414,10 +414,12 @@ class BN_layer(nn.Module):
         self.conv4 = conv1x1(1024 * block.expansion, 512 * block.expansion, 1)
         self.bn4 = norm_layer(512 * block.expansion)
 
+        self.maxpool = nn.AdaptiveMaxPool2d((1, 1))
+
         # center loss
         self.centers = nn.Parameter(torch.zeros(num_class, 512), requires_grad=False)
         self.x_center = None 
-        self.fc1 = nn.Linear(2048*8*8, 512)
+        self.fc1 = nn.Linear(2048, 512)
 
         #classification loss
         self.mlp_head = nn.Sequential(
@@ -466,13 +468,15 @@ class BN_layer(nn.Module):
         output = self.bn_layer(feature)
 
         # Center loss
-        feature_center = self.fc1(output)
+
+        feature_center = torch.flatten(self.maxpool(output), 1)
+        feature_center = self.fc1(feature_center)
         pred_class = self.mlp_head(feature_center)
 
         print(output.shape)
-        #x = self.avgpool(feature_d)
-        #x = torch.flatten(x, 1)
-        #x = self.fc(x)
+        # x = self.avgpool(feature_d)
+        # x = torch.flatten(x, 1)
+        # x = self.fc(x)
 
         return output.contiguous(), feature_center, pred_class
 

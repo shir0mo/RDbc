@@ -59,7 +59,7 @@ def train(_class_, class_list):
 
     # dataset
     train_dataset = ClassificationDataset(train_df)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     data_transform, gt_transform = get_data_transforms(image_size, image_size)
 
@@ -78,7 +78,7 @@ def train(_class_, class_list):
     # encoder.train()
 
     # decoder: freeze
-    decoder = de_wide_resnet50_2(pretrained=True)
+    decoder = de_wide_resnet50_2(pretrained=False)
     decoder = decoder.to(device)
     # decoder.eval()
 
@@ -90,13 +90,12 @@ def train(_class_, class_list):
         decoder.train()
         loss_list = []
         for img, label in train_loader:
-            print(label)
             img = img.to(device)
+            label = label.to(device, dtype=torch.int64)
             inputs = encoder(img)
-            inputs, z, x = bn(inputs)
-            outputs = decoder(inputs)
+            btl, z, x = bn(inputs)
+            outputs = decoder(btl)
 
-            # calculate loss
             cosloss = loss_fucntion(inputs, outputs)
             centerloss = F.cross_entropy(x, label)  + center_alpha * center_loss_func(bn, z, label)
             loss = cosloss + centerloss

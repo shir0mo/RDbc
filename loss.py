@@ -1,10 +1,13 @@
+import torch.nn
+from torch.nn import functional as F
+
 # center loss
 def center_loss_func(model, feature, target):
     return F.mse_loss(feature, model.centers[target])
 
 # optim center
 def update_center(model, target, beta_center, num_class):
-    feature = model.x_c.detach()
+    feature = model.x_center.detach()
     delta = torch.zeros(num_class, 512).cuda()
     for i in range(feature.shape[0]):
         delta[target[i]] += feature[i] - model.centers[target[i]]

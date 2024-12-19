@@ -205,8 +205,9 @@ class ClassificationDataset(Dataset):
 
         self.transform = transforms.Compose([
             transforms.Resize(224, Image.LANCZOS),
-            transforms.Normalize(mean=mean_train, std=std_train),
             transforms.ToTensor(),
+            transforms.Normalize(mean=mean_train, std=std_train)
+            
         ])
 
     def __len__(self):
