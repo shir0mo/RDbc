@@ -468,9 +468,12 @@ class BN_layer(nn.Module):
         output = self.bn_layer(feature)
 
         # Center loss
-
         feature_center = torch.flatten(self.maxpool(output), 1)
         feature_center = self.fc1(feature_center)
+
+        # center
+        self.x_center = feature_center
+        
         pred_class = self.mlp_head(feature_center)
 
         print(output.shape)

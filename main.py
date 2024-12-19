@@ -96,6 +96,7 @@ def train(_class_, class_list):
             btl, z, x = bn(inputs)
             outputs = decoder(btl)
 
+            # 損失計算
             cosloss = loss_fucntion(inputs, outputs)
             centerloss = F.cross_entropy(x, label)  + center_alpha * center_loss_func(bn, z, label)
             loss = cosloss + centerloss
