@@ -18,10 +18,10 @@ import argparse
 from test import evaluation, visualization, test
 from torch.nn import functional as F
 from loss import center_loss_func, update_center, loss_fucntion, loss_concat
+import time
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -84,11 +84,17 @@ def train(_class_, class_list):
 
     optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters()), lr=learning_rate, betas=(0.5,0.999))
 
+    start = time.perf_counter()
     for epoch in range(epochs):
         encoder.train()
         bn.train()
         decoder.train()
         loss_list = []
+
+        # watching loss
+        cosloss_list = []
+        centerloss_list = []
+
         for img, label in train_loader:
             img = img.to(device)
             label = label.to(device, dtype=torch.int64)
@@ -101,15 +107,20 @@ def train(_class_, class_list):
             centerloss = F.cross_entropy(x, label)  + center_alpha * center_loss_func(bn, z, label)
             loss = cosloss + centerloss
 
-            print("cos_loss: ", cosloss, "center_loss: ", centerloss)
-
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             update_center(bn, label, center_beta, num_class)
+            cosloss_list.append(cosloss.item())
+            centerloss_list.append(centerloss.item())
             loss_list.append(loss.item())
+        
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
 
+        print('cos_loss: {:.4f}, center_loss: {:.4f}'.format(np.mean(cosloss_list), np.mean(centerloss_list)))
         print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, epochs, np.mean(loss_list)))
+        print("epoch {}, time:{} m {} s".format(epoch + 1, int(elapsed_time // 60), int(elapsed_time % 60)))
         if (epoch + 1) % 10 == 0:
             # auroc_px, auroc_sp, aupro_px = evaluation(encoder, bn, decoder, test_dataloader, device)
             # print('Pixel Auroc:{:.3f}, Sample Auroc{:.3f}, Pixel Aupro{:.3}'.format(auroc_px, auroc_sp, aupro_px))
