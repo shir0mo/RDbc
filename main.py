@@ -43,7 +43,7 @@ def train(_class_, class_list):
     print(class_list)
 
     # Hyper params:
-    epochs = 200
+    epochs = 5
     learning_rate = 0.005
     batch_size = 16
     image_size = 256
@@ -82,9 +82,12 @@ def train(_class_, class_list):
     decoder = decoder.to(device)
     # decoder.eval()
 
+    # print model
+    # print(bn)
+
     optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters()), lr=learning_rate, betas=(0.5,0.999))
 
-    start = time.perf_counter()
+    start_time = time.perf_counter()
     for epoch in range(epochs):
         encoder.train()
         bn.train()
