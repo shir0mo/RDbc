@@ -5,6 +5,12 @@ import torch
 import glob
 from torchvision.datasets import MNIST, CIFAR10, FashionMNIST, ImageFolder
 import numpy as np
+from torch.utils.data import DataLoader, Dataset
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder
+
+import warnings
+warnings.filterwarnings("ignore")
 
 def get_data_transforms(size, isize):
     mean_train = [0.485, 0.456, 0.406]
@@ -21,8 +27,6 @@ def get_data_transforms(size, isize):
         transforms.CenterCrop(isize),
         transforms.ToTensor()])
     return data_transforms, gt_transforms
-
-
 
 class MVTecDataset(torch.utils.data.Dataset):
     def __init__(self, root, transform, gt_transform, phase):
@@ -171,3 +175,50 @@ def load_data(dataset_name='mnist',normal_class=0,batch_size='16'):
     )
 
     return train_dataloader, test_dataloader
+
+# train
+def make_train_data(exclude_label):
+    # データセットのパスを設定
+    output_path = '../mvtec_train'
+
+    # ラベル情報を読み込む
+    labels_df = pd.read_csv(os.path.join(output_path, 'labels.csv'))
+
+    # 特定のラベルを除外
+    filtered_df = labels_df[labels_df['label'] != exclude_label]
+
+    # ラベルをエンコード
+    label_encoder = LabelEncoder()
+    filtered_df.loc[:, 'label'] = label_encoder.fit_transform(filtered_df['label'])
+    # 訓練セットとテストセットに分割
+    #print(filtered_df)
+    return filtered_df
+
+# 分類タスク用
+class ClassificationDataset(Dataset):
+    def __init__(self, dataframe, transform=None):
+        self.dataframe = dataframe
+        self.transform = transform
+
+        mean_train = [0.485, 0.456, 0.406]
+        std_train = [0.229, 0.224, 0.225]
+
+        self.transform = transforms.Compose([
+            transforms.Resize(224, Image.LANCZOS),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean_train, std=std_train)
+            
+        ])
+
+    def __len__(self):
+        return len(self.dataframe)
+
+    def __getitem__(self, idx):
+        img_path = self.dataframe.iloc[idx, 0]
+        label = self.dataframe.iloc[idx, 1]
+        image = Image.open(img_path).convert("RGB")
+        
+        if self.transform:
+            image = self.transform(image)
+        
+        return image, label
