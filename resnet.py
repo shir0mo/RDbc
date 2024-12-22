@@ -267,7 +267,6 @@ def _resnet(
         model.load_state_dict(state_dict)
     return model
 
-# bottleneck
 class AttnBasicBlock(nn.Module):
     expansion: int = 1
 
@@ -388,7 +387,6 @@ class BN_layer(nn.Module):
     def __init__(self,
                  block: Type[Union[BasicBlock, Bottleneck]],
                  layers: int,
-                 num_class,
                  groups: int = 1,
                  width_per_group: int = 64,
                  norm_layer: Optional[Callable[..., nn.Module]] = None,
@@ -414,18 +412,6 @@ class BN_layer(nn.Module):
         self.conv4 = conv1x1(1024 * block.expansion, 512 * block.expansion, 1)
         self.bn4 = norm_layer(512 * block.expansion)
 
-        self.maxpool = nn.AdaptiveMaxPool2d((1, 1))
-
-        # center loss
-        self.centers = nn.Parameter(torch.zeros(num_class, 512), requires_grad=False)
-        self.x_center = None 
-        self.fc1 = nn.Linear(2048, 512)
-
-        #classification loss
-        self.mlp_head = nn.Sequential(
-            nn.LayerNorm(512),
-            nn.Linear(512, num_class)
-        )
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -466,20 +452,11 @@ class BN_layer(nn.Module):
         l2 = self.relu(self.bn3(self.conv3(x[1])))
         feature = torch.cat([l1,l2,x[2]],1)
         output = self.bn_layer(feature)
+        #x = self.avgpool(feature_d)
+        #x = torch.flatten(x, 1)
+        #x = self.fc(x)
 
-        # Center loss
-        feature_center = torch.flatten(self.maxpool(output), 1)
-        feature_center = self.fc1(feature_center)
-        pred_class = self.mlp_head(feature_center)
-
-        # center
-        self.x_center = feature_center
-        
-        # x = self.avgpool(feature_d)
-        # x = torch.flatten(x, 1)
-        # x = self.fc(x)
-
-        return output.contiguous(), feature_center, pred_class
+        return output.contiguous()
 
     def forward(self, x: Tensor) -> Tensor:
         return self._forward_impl(x)
@@ -515,7 +492,7 @@ def resnet50(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
         progress (bool): If True, displays a progress bar of the download to stderr
     """
     return _resnet('resnet50', Bottleneck, [3, 4, 6, 3], pretrained, progress,
-                   **kwargs), BN_layer(AttnBottleneck, 3, **kwargs)
+                   **kwargs), BN_layer(AttnBottleneck,3,**kwargs)
 
 
 def resnet101(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
@@ -565,8 +542,8 @@ def resnext101_32x8d(pretrained: bool = False, progress: bool = True, **kwargs: 
     return _resnet('resnext101_32x8d', Bottleneck, [3, 4, 23, 3],
                    pretrained, progress, **kwargs)
 
-# default
-def wide_resnet50_2(num_class, pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+
+def wide_resnet50_2(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
     r"""Wide ResNet-50-2 model from
     `"Wide Residual Networks" <https://arxiv.org/pdf/1605.07146.pdf>`_.
     The model is the same as ResNet except for the bottleneck number of channels
@@ -579,7 +556,7 @@ def wide_resnet50_2(num_class, pretrained: bool = False, progress: bool = True, 
     """
     kwargs['width_per_group'] = 64 * 2
     return _resnet('wide_resnet50_2', Bottleneck, [3, 4, 6, 3],
-                   pretrained, progress, **kwargs), BN_layer(AttnBottleneck, 3, num_class, **kwargs)
+                   pretrained, progress, **kwargs), BN_layer(AttnBottleneck,3,**kwargs)
 
 
 def wide_resnet101_2(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
