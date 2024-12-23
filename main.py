@@ -12,7 +12,7 @@ import os
 from torch.utils.data import DataLoader
 from resnet import resnet18, resnet34, resnet50, wide_resnet50_2
 from de_resnet import de_resnet18, de_resnet34, de_wide_resnet50_2, de_resnet50
-from dataset import FewshotDataset, make_train_data, ClassificationDataset
+from dataset import TestDataset, make_train_data, ClassificationDataset, SupportDataset
 import torch.backends.cudnn as cudnn
 import argparse
 from test import evaluation, visualization, test
@@ -21,6 +21,7 @@ from loss import center_loss_func, update_center, loss_fucntion, loss_concat
 from utils import create_log_file, log_and_print
 
 import time
+from tqdm import tqdm
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -62,23 +63,18 @@ def train(_class_, item_list):
 
     # train dataframe
     train_df = make_train_data(_class_)
-    print(train_df)
-
     # create log
     log_path = create_log_file(_class_)
+
+    data_transform, gt_transform = get_data_transforms(image_size, image_size)
+    test_path = '../mvtec/' + _class_
+    ckp_path = '../checkpoints/' + 'wres50_'+ log_path[13:-4] + '.pth'
 
     # dataset
     train_dataset = ClassificationDataset(train_df)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    data_transform, gt_transform = get_data_transforms(image_size, image_size)
-
-    # train_path = '../mvtec/' + _class_ + '/train'
-    test_path = '../mvtec/' + _class_
-    ckp_path = '../checkpoints/' + 'wres50_'+_class_+'.pth'
-    #train_data = ImageFolder(root=train_path, transform=data_transform)
-    test_data = FewshotDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, phase="test")
-    #train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    
+    test_data = TestDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, phase="test")
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
 
     # encoder and bottleneck: learnable
@@ -108,7 +104,7 @@ def train(_class_, item_list):
         cosloss_list = []
         centerloss_list = []
 
-        for img, label in train_loader:
+        for img, label in tqdm(train_loader):
             img = img.to(device)
             label = label.to(device, dtype=torch.int64)
             inputs = encoder(img)
@@ -137,13 +133,16 @@ def train(_class_, item_list):
                       .format(epoch + 1, epochs, np.mean(loss_list)), log_path)
         log_and_print("epoch {}, time:{} m {} s"
                       .format(epoch + 1, int(elapsed_time // 60), int(elapsed_time % 60)), log_path)
-        if (epoch + 1) % 10 == 0:
+        if (epoch) % 10 == 0:
             # auroc_px, auroc_sp, aupro_px = evaluation(encoder, bn, decoder, test_dataloader, device)
             # print('Pixel Auroc:{:.3f}, Sample Auroc{:.3f}, Pixel Aupro{:.3}'.format(auroc_px, auroc_sp, aupro_px))
-            torch.save({'bn': bn.state_dict(),
+            auroc_sp = evaluation(encoder, bn, decoder, test_dataloader, device, shot)
+            torch.save({'encoder': encoder.state_dict(),
+                        'bn': bn.state_dict(),
                         'decoder': decoder.state_dict()}, ckp_path)
-
-    # return auroc_px, auroc_sp, aupro_px
+        log_and_print("epoch {}, time:{} m {} s"
+                      .format(epoch + 1, int(elapsed_time // 60), int(elapsed_time % 60)), log_path)
+    return auroc_px, auroc_sp, aupro_px
 
 
 if __name__ == '__main__':

@@ -28,8 +28,39 @@ def get_data_transforms(size, isize):
         transforms.ToTensor()])
     return data_transforms, gt_transforms
 
+# augment support
+def augment_support_data(fewshot_loader):
+    Iter = iter(fewshot_loader)
+    few_support_img = next(Iter)
+
+    augment_support_img = few_support_img
+    # rotate img with small angle
+    for angle in [-np.pi / 4, -3 * np.pi / 16, -np.pi / 8, -np.pi / 16, np.pi / 16, np.pi / 8, 3 * np.pi / 16,
+                  np.pi / 4]:
+        rotate_img = rot_img(support_img, angle)
+        augment_support_img = torch.cat([augment_support_img, rotate_img], dim=0)
+    # translate img
+    for a, b in [(0.2, 0.2), (-0.2, 0.2), (-0.2, -0.2), (0.2, -0.2), (0.1, 0.1), (-0.1, 0.1), (-0.1, -0.1),
+                 (0.1, -0.1)]:
+        trans_img = translation_img(support_img, a, b)
+        augment_support_img = torch.cat([augment_support_img, trans_img], dim=0)
+    # hflip img
+    flipped_img = hflip_img(support_img)
+    augment_support_img = torch.cat([augment_support_img, flipped_img], dim=0)
+    # rgb to grey img
+    greyed_img = grey_img(support_img)
+    augment_support_img = torch.cat([augment_support_img, greyed_img], dim=0)
+    # rotate img in 90 degree
+    for angle in [1, 2, 3]:
+        rotate90_img = rot90_img(support_img, angle)
+        augment_support_img = torch.cat([augment_support_img, rotate90_img], dim=0)
+    augment_support_img = augment_support_img[torch.randperm(augment_support_img.size(0))]
+
+    return augment_support_img
+    
+
 # Few-shot query Dataset
-class FewshotDataset(torch.utils.data.Dataset):
+class TestDataset(torch.utils.data.Dataset):
     def __init__(self, root, transform, gt_transform, phase):
         if phase == 'train':
             self.img_path = os.path.join(root, 'train')
@@ -160,15 +191,15 @@ class ClassificationDataset(Dataset):
         self.dataframe = dataframe
         self.transform = transform
 
-        mean_train = [0.485, 0.456, 0.406]
-        std_train = [0.229, 0.224, 0.225]
+        if transform == None:
+            mean_train = [0.485, 0.456, 0.406]
+            std_train = [0.229, 0.224, 0.225]
 
-        self.transform = transforms.Compose([
-            transforms.Resize(224, Image.LANCZOS),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean_train, std=std_train)
-            
-        ])
+            self.transform = transforms.Compose([
+                transforms.Resize(224, Image.LANCZOS),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean_train, std=std_train)
+            ])
 
     def __len__(self):
         return len(self.dataframe)

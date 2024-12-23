@@ -10,18 +10,18 @@ def create_log_file(_class_):
     get_day = str(dt_now.year) + "-" + str(dt_now.month) + "-" + str(dt_now.day)
     get_time = str(dt_now.hour) + "-"  + str(dt_now.minute)
 
-    filename = "../train_log/" +  _class_ + "_" + get_day + ".txt"
+    filename = "../train_log/" + _class_ + "_" + get_day + ".txt"
 
     if not os.path.exists(filename):
         with open(filename, "w") as f:
             f.close()
     else:
     # ファイル名が存在するなら，時間を付与
-        filename = "../" + "a" + "_" + get_day + "_" + get_time + ".txt"
+        filename = "../" + _class_ + "_" + get_day + "_" + get_time + ".txt"
         with open(filename, "w") as f:
             f.close()
         
-    print("create {}".format(filename))
+    print("create {}".format(filename[3:]))
     
     return filename
     
