@@ -191,7 +191,6 @@ def make_train_data(exclude_label):
     label_encoder = LabelEncoder()
     filtered_df.loc[:, 'label'] = label_encoder.fit_transform(filtered_df['label'])
     # 訓練セットとテストセットに分割
-    #print(filtered_df)
     return filtered_df
 
 # 分類タスク用

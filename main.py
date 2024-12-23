@@ -41,9 +41,10 @@ def train(_class_, class_list):
 
     print(_class_)
     print(class_list)
+    torch.cuda.reset_max_memory_allocated()
 
     # Hyper params:
-    epochs = 5
+    epochs = 50
     learning_rate = 0.005
     batch_size = 16
     image_size = 256
@@ -56,6 +57,7 @@ def train(_class_, class_list):
 
     # train dataframe
     train_df = make_train_data(_class_)
+    print(train_df)
 
     # dataset
     train_dataset = ClassificationDataset(train_df)
@@ -85,10 +87,8 @@ def train(_class_, class_list):
     # print model
     # print(bn)
 
-    optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters()), lr=learning_rate, betas=(0.5,0.999))
+    optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters())+list(decoder.parameters()), lr=learning_rate, betas=(0.5,0.999))
 
-
-    
     start_time = time.perf_counter()
     for epoch in range(epochs):
         encoder.train()
@@ -107,6 +107,7 @@ def train(_class_, class_list):
             btl, z, x = bn(inputs)
             outputs = decoder(btl)
 
+            print(label, x.shape)
             # 損失計算
             cosloss = loss_fucntion(inputs, outputs)
             centerloss = F.cross_entropy(x, label)  + center_alpha * center_loss_func(bn, z, label)
@@ -131,6 +132,10 @@ def train(_class_, class_list):
             # print('Pixel Auroc:{:.3f}, Sample Auroc{:.3f}, Pixel Aupro{:.3}'.format(auroc_px, auroc_sp, aupro_px))
             torch.save({'bn': bn.state_dict(),
                         'decoder': decoder.state_dict()}, ckp_path)
+    
+    # item_list をすべてのクラスになるように戻す
+    return class_list.append(_class_)
+    
     # return auroc_px, auroc_sp, aupro_px
 
 if __name__ == '__main__':
@@ -140,4 +145,5 @@ if __name__ == '__main__':
                  'transistor', 'metal_nut', 'screw','toothbrush', 'zipper', 'tile', 'wood']
     
     for i in item_list:
-        train(i, item_list)
+        item_list = train(i, item_list)
+        # item_list.append(i)
