@@ -87,6 +87,8 @@ def train(_class_, class_list):
 
     optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters()), lr=learning_rate, betas=(0.5,0.999))
 
+
+    
     start_time = time.perf_counter()
     for epoch in range(epochs):
         encoder.train()
