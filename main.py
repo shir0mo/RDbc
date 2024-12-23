@@ -12,12 +12,14 @@ import os
 from torch.utils.data import DataLoader
 from resnet import resnet18, resnet34, resnet50, wide_resnet50_2
 from de_resnet import de_resnet18, de_resnet34, de_wide_resnet50_2, de_resnet50
-from dataset import MVTecDataset, make_train_data, ClassificationDataset
+from dataset import FewshotDataset, make_train_data, ClassificationDataset
 import torch.backends.cudnn as cudnn
 import argparse
 from test import evaluation, visualization, test
 from torch.nn import functional as F
 from loss import center_loss_func, update_center, loss_fucntion, loss_concat
+from utils import create_log_file, log_and_print
+
 import time
 
 def count_parameters(model):
@@ -31,33 +33,39 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def train(_class_, class_list):
+def train(_class_, item_list):
 
-    for i in range(len(class_list)):
+    # copy
+    class_list = []
+    for i in range(len(item_list)):
         # 対象カテゴリ以外を省く
-        if class_list[i] == _class_:
-           class_list.pop(i)
-           break
+        if item_list[i] != _class_:
+           class_list.append(item_list[i])
 
     print(_class_)
     print(class_list)
     torch.cuda.reset_max_memory_allocated()
 
     # Hyper params:
-    epochs = 50
+    epochs = 1
     learning_rate = 0.005
     batch_size = 16
     image_size = 256
     num_class = len(class_list)
     center_alpha = 0.5
     center_beta = 0.5
-        
+    # experiments settings
+    shot = 2
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(device)
 
     # train dataframe
     train_df = make_train_data(_class_)
     print(train_df)
+
+    # create log
+    log_path = create_log_file(_class_)
 
     # dataset
     train_dataset = ClassificationDataset(train_df)
@@ -69,7 +77,7 @@ def train(_class_, class_list):
     test_path = '../mvtec/' + _class_
     ckp_path = '../checkpoints/' + 'wres50_'+_class_+'.pth'
     #train_data = ImageFolder(root=train_path, transform=data_transform)
-    test_data = MVTecDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, phase="test")
+    test_data = FewshotDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, phase="test")
     #train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
 
@@ -107,7 +115,6 @@ def train(_class_, class_list):
             btl, z, x = bn(inputs)
             outputs = decoder(btl)
 
-            print(label, x.shape)
             # 損失計算
             cosloss = loss_fucntion(inputs, outputs)
             centerloss = F.cross_entropy(x, label)  + center_alpha * center_loss_func(bn, z, label)
@@ -124,19 +131,20 @@ def train(_class_, class_list):
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
 
-        print('cos_loss: {:.4f}, center_loss: {:.4f}'.format(np.mean(cosloss_list), np.mean(centerloss_list)))
-        print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, epochs, np.mean(loss_list)))
-        print("epoch {}, time:{} m {} s".format(epoch + 1, int(elapsed_time // 60), int(elapsed_time % 60)))
+        log_and_print('cos_loss: {:.4f}, center_loss: {:.4f}'
+                      .format(np.mean(cosloss_list), np.mean(centerloss_list)), log_path)
+        log_and_print('epoch [{}/{}], loss:{:.4f}'
+                      .format(epoch + 1, epochs, np.mean(loss_list)), log_path)
+        log_and_print("epoch {}, time:{} m {} s"
+                      .format(epoch + 1, int(elapsed_time // 60), int(elapsed_time % 60)), log_path)
         if (epoch + 1) % 10 == 0:
             # auroc_px, auroc_sp, aupro_px = evaluation(encoder, bn, decoder, test_dataloader, device)
             # print('Pixel Auroc:{:.3f}, Sample Auroc{:.3f}, Pixel Aupro{:.3}'.format(auroc_px, auroc_sp, aupro_px))
             torch.save({'bn': bn.state_dict(),
                         'decoder': decoder.state_dict()}, ckp_path)
-    
-    # item_list をすべてのクラスになるように戻す
-    return class_list.append(_class_)
-    
+
     # return auroc_px, auroc_sp, aupro_px
+
 
 if __name__ == '__main__':
 
@@ -144,6 +152,6 @@ if __name__ == '__main__':
     item_list = ['carpet', 'bottle', 'hazelnut', 'leather', 'cable', 'capsule', 'grid', 'pill',
                  'transistor', 'metal_nut', 'screw','toothbrush', 'zipper', 'tile', 'wood']
     
-    for i in item_list:
-        item_list = train(i, item_list)
-        # item_list.append(i)
+    for i in range(len(item_list)):
+        train(item_list[i], item_list)
+        print(item_list)
