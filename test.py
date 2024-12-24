@@ -1,5 +1,6 @@
 import torch
-from dataset import get_data_transforms, augment_support_data
+from dataset import get_data_transforms
+from augmentation import augment_support_data
 from torchvision.datasets import ImageFolder
 import numpy as np
 from torch.utils.data import DataLoader
@@ -22,6 +23,8 @@ from scipy.spatial.distance import pdist
 import matplotlib
 import pickle
 from tqdm import tqdm
+
+import time
 
 def cal_anomaly_map(fs_list, ft_list, out_size=224, amap_mode='mul'):
     if amap_mode == 'mul':
@@ -52,7 +55,7 @@ def cal_score(fs, ft):
     a_vec = 1 - F.cosine_similarity(fs, ft)
     a_vec = a_vec.to('cpu').detach().numpy()
 
-    return anomaly_v
+    return a_vec
 
 def show_cam_on_image(img, anomaly_map):
     #if anomaly_map.shape != img.shape:
@@ -89,19 +92,23 @@ def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
     # pr_list_px = []
     gt_list_sp = []
     pr_list_sp = []
-    # aupro_list = []
+    
+    auc_list = []
+    time_list = []
 
     for i in tqdm(range(10)):
         # support img
         support_img = augment_support_data(fewshot_dataloader)
 
+        start_time = time.perf_counter()
         with torch.no_grad():
             support_img = support_img.to(device)
             inputs = encoder(support_img)
             btl, z_support, x = bn(inputs)
             # outputs = decoder(btl)
-
+        
         with torch.no_grad():
+            img_num = 0
             for img, gt, label, _ in dataloader:
 
                 img = img.to(device)
@@ -128,7 +135,7 @@ def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
 
                 gt_list_sp.append(np.max(gt.cpu().numpy().astype(int)))
                 pr_list_sp.append(np.max(anomaly_vector))
-
+                img_num += 1 
             #ano_score = (pr_list_sp - np.min(pr_list_sp)) / (np.max(pr_list_sp) - np.min(pr_list_sp))
             #vis_data = {}
             #vis_data['Anomaly Score'] = ano_score
@@ -141,8 +148,15 @@ def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
 
         #auroc_px = round(roc_auc_score(gt_list_px, pr_list_px), 3)
         auroc_sp = round(roc_auc_score(gt_list_sp, pr_list_sp), 3)
+        auc_list.append(auroc_sp)
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        time_list.append(elapsed_time / img_num)
+    
     #return auroc_px, auroc_sp, round(np.mean(aupro_list),3)
-    return auroc_sp
+
+    return sum(auc_list) / len(auc_list), sum(time_list) / len(time_list)
 
 def test(_class_):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'

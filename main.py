@@ -18,10 +18,12 @@ import argparse
 from test import evaluation, visualization, test
 from torch.nn import functional as F
 from loss import center_loss_func, update_center, loss_fucntion, loss_concat
-from utils import create_log_file, log_and_print
+from utils import create_log_file, log_and_print, plot_tsne
 
 import time
 from tqdm import tqdm
+
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -48,13 +50,14 @@ def train(_class_, item_list):
     torch.cuda.reset_max_memory_allocated()
 
     # Hyper params:
-    epochs = 1
-    learning_rate = 0.005
+    epochs = 10
+    # learning_rate = 0.005
+    learning_rate = 0.0001
     batch_size = 16
     image_size = 256
     num_class = len(class_list)
     center_alpha = 0.5
-    center_beta = 0.5
+    center_beta = 1.0
     # experiments settings
     shot = 2
 
@@ -65,10 +68,9 @@ def train(_class_, item_list):
     train_df = make_train_data(_class_)
     # create log
     log_path = create_log_file(_class_)
-
+    print(log_path)
     data_transform, gt_transform = get_data_transforms(image_size, image_size)
     test_path = '../mvtec/' + _class_
-    print(test_path)
     ckp_path = '../checkpoints/' + 'wres50_'+ log_path[13:-4] + '.pth'
 
     # dataset
@@ -93,6 +95,13 @@ def train(_class_, item_list):
     # print(bn)
 
     optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters())+list(decoder.parameters()), lr=learning_rate, betas=(0.5,0.999))
+
+    # compare scores 
+    auc_old, auc_pre = 0.000, 0.000
+
+    # visualize
+    ip1_loader = []
+    idx_loader = []
 
     start_time = time.perf_counter()
     for epoch in range(epochs):
@@ -124,9 +133,17 @@ def train(_class_, item_list):
             cosloss_list.append(cosloss.item())
             centerloss_list.append(centerloss.item())
             loss_list.append(loss.item())
+
+            ip1_loader.append(z)
+            idx_loader.append((label))
         
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
+
+        feat = torch.cat(ip1_loader, 0).cpu()
+        labels_list = torch.cat(idx_loader, 0).cpu()
+
+        plot_tsne(feat.detach().numpy(), labels_list.detach().numpy(), epoch, class_list, _class_, log_path[13:-4])
 
         log_and_print('cos_loss: {:.4f}, center_loss: {:.4f}'
                       .format(np.mean(cosloss_list), np.mean(centerloss_list)), log_path)
@@ -134,16 +151,23 @@ def train(_class_, item_list):
                       .format(epoch + 1, epochs, np.mean(loss_list)), log_path)
         log_and_print("epoch {}, time:{} m {} s"
                       .format(epoch + 1, int(elapsed_time // 60), int(elapsed_time % 60)), log_path)
-        if (epoch) % 10 == 0:
+        
+        # eval
+        auroc_sp, inference_time = evaluation(encoder, bn, decoder, test_dataloader, device, shot, _class_)
+        log_and_print('Image level AUCROC: {:.3f}, time: {:.3f}[s]'
+                      .format(auroc_sp, inference_time), log_path)
+
+        auc_pre = auroc_sp
+
+        if auc_old <= auc_pre:
+            auc_old = auc_pre
             # auroc_px, auroc_sp, aupro_px = evaluation(encoder, bn, decoder, test_dataloader, device)
             # print('Pixel Auroc:{:.3f}, Sample Auroc{:.3f}, Pixel Aupro{:.3}'.format(auroc_px, auroc_sp, aupro_px))
-            auroc_sp = evaluation(encoder, bn, decoder, test_dataloader, device, shot, _class_)
             torch.save({'encoder': encoder.state_dict(),
                         'bn': bn.state_dict(),
                         'decoder': decoder.state_dict()}, ckp_path)
-        log_and_print("epoch {}, time:{} m {} s"
-                      .format(epoch + 1, int(elapsed_time // 60), int(elapsed_time % 60)), log_path)
-    return auroc_px, auroc_sp, aupro_px
+            print("saveed {} .".format(ckp_path[3:]))
+    # return auroc_px, auroc_sp, aupro_px
 
 
 if __name__ == '__main__':
