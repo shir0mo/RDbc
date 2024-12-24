@@ -68,6 +68,7 @@ def train(_class_, item_list):
 
     data_transform, gt_transform = get_data_transforms(image_size, image_size)
     test_path = '../mvtec/' + _class_
+    print(test_path)
     ckp_path = '../checkpoints/' + 'wres50_'+ log_path[13:-4] + '.pth'
 
     # dataset
@@ -136,7 +137,7 @@ def train(_class_, item_list):
         if (epoch) % 10 == 0:
             # auroc_px, auroc_sp, aupro_px = evaluation(encoder, bn, decoder, test_dataloader, device)
             # print('Pixel Auroc:{:.3f}, Sample Auroc{:.3f}, Pixel Aupro{:.3}'.format(auroc_px, auroc_sp, aupro_px))
-            auroc_sp = evaluation(encoder, bn, decoder, test_dataloader, device, shot)
+            auroc_sp = evaluation(encoder, bn, decoder, test_dataloader, device, shot, _class_)
             torch.save({'encoder': encoder.state_dict(),
                         'bn': bn.state_dict(),
                         'decoder': decoder.state_dict()}, ckp_path)

@@ -76,6 +76,7 @@ def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
     image_size = 256
 
     data_transform, gt_transform = get_data_transforms(image_size, image_size)
+    test_path = '../mvtec/' + _class_
     # support data
     fewshot_data = SupportDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, shot=shot)
     fewshot_dataloader = torch.utils.data.DataLoader(fewshot_data, batch_size=1, shuffle=True)
@@ -92,7 +93,7 @@ def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
 
     for i in tqdm(range(10)):
         # support img
-        support_img = augment_support_img(fewshot_dataloader)
+        support_img = augment_support_data(fewshot_dataloader)
 
         with torch.no_grad():
             support_img = support_img.to(device)

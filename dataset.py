@@ -3,7 +3,6 @@ from PIL import Image
 import os
 import torch
 import glob
-from torchvision.datasets import MNIST, CIFAR10, FashionMNIST, ImageFolder
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd
@@ -27,6 +26,42 @@ def get_data_transforms(size, isize):
         transforms.CenterCrop(isize),
         transforms.ToTensor()])
     return data_transforms, gt_transforms
+
+def get_translation_mat(a, b):
+    return torch.tensor([[1, 0, a],
+                         [0, 1, b]])
+
+# augumentation
+def rot_img(x, theta):
+    dtype =  torch.FloatTensor
+    rot_mat = get_rot_mat(theta)[None, ...].type(dtype).repeat(x.shape[0],1,1)
+    grid = F.affine_grid(rot_mat, x.size()).type(dtype)
+    x = F.grid_sample(x, grid, padding_mode="reflection")
+    return x
+
+def translation_img(x, a, b):
+    dtype =  torch.FloatTensor
+    rot_mat = get_translation_mat(a, b)[None, ...].type(dtype).repeat(x.shape[0],1,1)
+    grid = F.affine_grid(rot_mat, x.size()).type(dtype)
+    x = F.grid_sample(x, grid, padding_mode="reflection")
+    return x
+
+def hflip_img(x):
+    x = K.geometry.transform.hflip(x)
+    return x
+
+
+def rot90_img(x,k):
+    # k is 0,1,2,3
+    degreesarr = [0., 90., 180., 270., 360]
+    degrees = torch.tensor(degreesarr[k])
+    x = K.geometry.transform.rotate(x, angle = degrees, padding_mode='reflection')
+    return x
+
+def grey_img(x):
+    x = K.color.rgb_to_grayscale(x)
+    x = x.repeat(1, 3, 1,1)
+    return x
 
 # augment support
 def augment_support_data(fewshot_loader):
@@ -58,7 +93,6 @@ def augment_support_data(fewshot_loader):
 
     return augment_support_img
     
-
 # Few-shot query Dataset
 class TestDataset(torch.utils.data.Dataset):
     def __init__(self, root, transform, gt_transform, phase):
@@ -126,14 +160,14 @@ class SupportDataset(torch.utils.data.Dataset):
     def __init__(self, root, transform, gt_transform, shot):
 
         # add train path
-        self.img_path = os.path.join(root, 'train')
+        self.img_path = os.path.join(root, 'train', 'good')
 
         self.transform = transform
         self.gt_transform = gt_transform
         self.shot = shot
 
         # load dataset
-        self.img_paths= self.load_dataset()
+        self.img_paths, self.gt_paths= self.load_dataset()
 
     def __getitem__(self, idx):
         img_path, gt = self.img_paths[idx], self.gt_paths[idx]
