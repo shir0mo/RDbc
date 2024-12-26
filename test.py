@@ -26,6 +26,10 @@ from tqdm import tqdm
 
 import time
 
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
 def cal_anomaly_map(fs_list, ft_list, out_size=224, amap_mode='mul'):
     if amap_mode == 'mul':
         anomaly_map = np.ones([out_size, out_size])
@@ -82,7 +86,7 @@ def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
     test_path = '../mvtec/' + _class_
     # support data
     fewshot_data = SupportDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, shot=shot)
-    fewshot_dataloader = torch.utils.data.DataLoader(fewshot_data, batch_size=1, shuffle=True)
+    fewshot_dataloader = torch.utils.data.DataLoader(fewshot_data, batch_size=1,  num_workers=1, shuffle=True)
     
     # 評価モード
     encoder.eval()

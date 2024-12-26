@@ -72,3 +72,5 @@ def plot_tsne(features, labels, epoch, cls_list, _class_, _path_):
     #plt.colorbar(scatter)
     plt.title(f't-SNE Visualization at Epoch {epoch}')
     plt.savefig(f'{tsne_path}/{_path_}_tsne_epoch_{epoch}.png')  # Save the plot for each epoch
+
+    del(tsne_results)

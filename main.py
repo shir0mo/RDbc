@@ -1,5 +1,6 @@
 # This is a sample Python script.
 
+
 # Press ⌃R to execute it or replace it with your code.
 # Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
 
@@ -23,7 +24,10 @@ from utils import create_log_file, log_and_print, plot_tsne
 import time
 from tqdm import tqdm
 
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
+default_n_threads = 8
+os.environ['OPENBLAS_NUM_THREADS'] = f"{default_n_threads}"
+os.environ['MKL_NUM_THREADS'] = f"{default_n_threads}"
+os.environ['OMP_NUM_THREADS'] = f"{default_n_threads}"
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -51,6 +55,7 @@ def train(_class_, item_list):
 
     # Hyper params:
     epochs = 10
+    warmup_epochs = 5
     # learning_rate = 0.005
     learning_rate = 0.0001
     batch_size = 16
@@ -68,17 +73,17 @@ def train(_class_, item_list):
     train_df = make_train_data(_class_)
     # create log
     log_path = create_log_file(_class_)
-    print(log_path)
+ 
     data_transform, gt_transform = get_data_transforms(image_size, image_size)
     test_path = '../mvtec/' + _class_
     ckp_path = '../checkpoints/' + 'wres50_'+ log_path[13:-4] + '.pth'
 
     # dataset
     train_dataset = ClassificationDataset(train_df)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=1, shuffle=True)
     
     test_data = TestDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, phase="test")
-    test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
+    test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, num_workers=1, shuffle=False)
 
     # encoder and bottleneck: learnable
     encoder, bn = wide_resnet50_2(num_class, pretrained=True)
@@ -94,18 +99,23 @@ def train(_class_, item_list):
     # print model
     # print(bn)
 
-    optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters())+list(decoder.parameters()), lr=learning_rate, betas=(0.5,0.999))
+    optimizer = torch.optim.Adam([
+        {"params": bn.parameters()},
+        {"params": decoder.parameters()}
+    ], lr=0.01, betas=(0.5,0.999))
+
+    # optimizer = torch.optim.Adam(list(encoder.parameters())+list(bn.parameters())+list(decoder.parameters()), lr=learning_rate, betas=(0.5,0.999))
 
     # compare scores 
     auc_old, auc_pre = 0.000, 0.000
 
-    # visualize
-    ip1_loader = []
-    idx_loader = []
-
+    # time
     start_time = time.perf_counter()
+
     for epoch in range(epochs):
-        encoder.train()
+
+        encoder.train() if (epoch+1) >= warmup_epochs else encoder.eval()
+        
         bn.train()
         decoder.train()
         loss_list = []
@@ -113,6 +123,14 @@ def train(_class_, item_list):
         # watching loss
         cosloss_list = []
         centerloss_list = []
+
+        # visualize
+        ip1_loader = []
+        idx_loader = []
+
+        # learnable encoder
+        if epoch == warmup_epochs:
+            optimizer.add_param_group({"params": encoder.parameters()})
 
         for img, label in tqdm(train_loader):
             img = img.to(device)
@@ -142,7 +160,6 @@ def train(_class_, item_list):
 
         feat = torch.cat(ip1_loader, 0).cpu()
         labels_list = torch.cat(idx_loader, 0).cpu()
-
         plot_tsne(feat.detach().numpy(), labels_list.detach().numpy(), epoch, class_list, _class_, log_path[13:-4])
 
         log_and_print('cos_loss: {:.4f}, center_loss: {:.4f}'
