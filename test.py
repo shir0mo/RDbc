@@ -1,11 +1,12 @@
 import torch
-from dataset import get_data_transforms, load_data
+from dataset import get_data_transforms
+from augmentation import augment_support_data
 from torchvision.datasets import ImageFolder
 import numpy as np
 from torch.utils.data import DataLoader
 from resnet import resnet18, resnet34, resnet50, wide_resnet50_2
 from de_resnet import de_resnet18, de_resnet50, de_wide_resnet50_2
-from dataset import MVTecDataset
+from dataset import TestDataset, SupportDataset
 from torch.nn import functional as F
 from sklearn.metrics import roc_auc_score
 import cv2
@@ -21,6 +22,13 @@ from matplotlib.ticker import NullFormatter
 from scipy.spatial.distance import pdist
 import matplotlib
 import pickle
+from tqdm import tqdm
+
+import time
+
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 def cal_anomaly_map(fs_list, ft_list, out_size=224, amap_mode='mul'):
     if amap_mode == 'mul':
@@ -28,6 +36,7 @@ def cal_anomaly_map(fs_list, ft_list, out_size=224, amap_mode='mul'):
     else:
         anomaly_map = np.zeros([out_size, out_size])
     a_map_list = []
+
     for i in range(len(ft_list)):
         fs = fs_list[i]
         ft = ft_list[i]
@@ -44,6 +53,14 @@ def cal_anomaly_map(fs_list, ft_list, out_size=224, amap_mode='mul'):
             anomaly_map += a_map
     return anomaly_map, a_map_list
 
+# calculate anomaly score
+def cal_score(fs, ft):
+    
+    a_vec = 1 - F.cosine_similarity(fs, ft)
+    a_vec = a_vec.to('cpu').detach().numpy()
+
+    return a_vec
+
 def show_cam_on_image(img, anomaly_map):
     #if anomaly_map.shape != img.shape:
     #    anomaly_map = cv2.applyColorMap(np.uint8(anomaly_map), cv2.COLORMAP_JET)
@@ -59,52 +76,91 @@ def cvt2heatmap(gray):
     heatmap = cv2.applyColorMap(np.uint8(gray), cv2.COLORMAP_JET)
     return heatmap
 
+# train時の評価にも利用
+def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
 
+    #Hyper params
+    image_size = 256
 
-def evaluation(encoder, bn, decoder, dataloader,device,_class_=None):
-    #_, t_bn = resnet50(pretrained=True)
-    #bn.load_state_dict(bn.state_dict())
+    data_transform, gt_transform = get_data_transforms(image_size, image_size)
+    test_path = '../mvtec/' + _class_
+    # support data
+    fewshot_data = SupportDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, shot=shot)
+    fewshot_dataloader = torch.utils.data.DataLoader(fewshot_data, batch_size=1,  num_workers=1, shuffle=True)
+    
+    # 評価モード
+    encoder.eval()
     bn.eval()
-    #bn.training = False
-    #t_bn.to(device)
-    #t_bn.load_state_dict(bn.state_dict())
     decoder.eval()
-    gt_list_px = []
-    pr_list_px = []
+    # gt_list_px = []
+    # pr_list_px = []
     gt_list_sp = []
     pr_list_sp = []
-    aupro_list = []
-    with torch.no_grad():
-        for img, gt, label, _ in dataloader:
+    
+    auc_list = []
+    time_list = []
 
-            img = img.to(device)
-            inputs = encoder(img)
-            outputs = decoder(bn(inputs))
-            anomaly_map, _ = cal_anomaly_map(inputs, outputs, img.shape[-1], amap_mode='a')
-            anomaly_map = gaussian_filter(anomaly_map, sigma=4)
-            gt[gt > 0.5] = 1
-            gt[gt <= 0.5] = 0
-            if label.item()!=0:
-                aupro_list.append(compute_pro(gt.squeeze(0).cpu().numpy().astype(int),
-                                              anomaly_map[np.newaxis,:,:]))
-            gt_list_px.extend(gt.cpu().numpy().astype(int).ravel())
-            pr_list_px.extend(anomaly_map.ravel())
-            gt_list_sp.append(np.max(gt.cpu().numpy().astype(int)))
-            pr_list_sp.append(np.max(anomaly_map))
+    for i in tqdm(range(10)):
+        # support img
+        support_img = augment_support_data(fewshot_dataloader)
 
-        #ano_score = (pr_list_sp - np.min(pr_list_sp)) / (np.max(pr_list_sp) - np.min(pr_list_sp))
-        #vis_data = {}
-        #vis_data['Anomaly Score'] = ano_score
-        #vis_data['Ground Truth'] = np.array(gt_list_sp)
-        # print(type(vis_data))
-        # np.save('vis.npy',vis_data)
-        #with open('{}_vis.pkl'.format(_class_), 'wb') as f:
-        #    pickle.dump(vis_data, f, pickle.HIGHEST_PROTOCOL)
+        start_time = time.perf_counter()
+        with torch.no_grad():
+            support_img = support_img.to(device)
+            inputs = encoder(support_img)
+            btl, z_support, x = bn(inputs)
+            # outputs = decoder(btl)
+        
+        with torch.no_grad():
+            img_num = 0
+            for img, gt, label, _ in dataloader:
+
+                img = img.to(device)
+                inputs = encoder(img)
+                _btl, z_test, _x = bn(inputs)
+
+                # outputs = decoder(bn(inputs))
+                
+                # segmentation
+                # anomaly_map, _ = cal_anomaly_map(inputs, outputs, img.shape[-1], amap_mode='a')
+                # anomaly_map = gaussian_filter(anomaly_map, sigma=4)
+
+                # detection
+                anomaly_vector = cal_score(z_support, z_test)
+
+                gt[gt > 0.5] = 1
+                gt[gt <= 0.5] = 0
+
+                # if label.item()!=0:
+                #     aupro_list.append(compute_pro(gt.squeeze(0).cpu().numpy().astype(int),
+                #                                   anomaly_map[np.newaxis,:,:]))
+                #gt_list_px.extend(gt.cpu().numpy().astype(int).ravel())
+                #pr_list_px.extend(anomaly_map.ravel())
+
+                gt_list_sp.append(np.max(gt.cpu().numpy().astype(int)))
+                pr_list_sp.append(np.max(anomaly_vector))
+                img_num += 1 
+            #ano_score = (pr_list_sp - np.min(pr_list_sp)) / (np.max(pr_list_sp) - np.min(pr_list_sp))
+            #vis_data = {}
+            #vis_data['Anomaly Score'] = ano_score
+            #vis_data['Ground Truth'] = np.array(gt_list_sp)
+            # print(type(vis_data))
+            # np.save('vis.npy',vis_data)
+            #with open('{}_vis.pkl'.format(_class_), 'wb') as f:
+            #    pickle.dump(vis_data, f, pickle.HIGHEST_PROTOCOL)
 
 
-        auroc_px = round(roc_auc_score(gt_list_px, pr_list_px), 3)
+        #auroc_px = round(roc_auc_score(gt_list_px, pr_list_px), 3)
         auroc_sp = round(roc_auc_score(gt_list_sp, pr_list_sp), 3)
-    return auroc_px, auroc_sp, round(np.mean(aupro_list),3)
+        auc_list.append(auroc_sp)
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        time_list.append(elapsed_time / img_num)
+    
+    #return auroc_px, auroc_sp, round(np.mean(aupro_list),3)
+
+    return sum(auc_list) / len(auc_list), sum(time_list) / len(time_list)
 
 def test(_class_):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -113,7 +169,7 @@ def test(_class_):
 
     data_transform, gt_transform = get_data_transforms(256, 256)
     test_path = '../mvtec/' + _class_
-    ckp_path = './checkpoints/' + 'rm_1105_wres50_ff_mm_' + _class_ + '.pth'
+    ckp_path = '../checkpoints/' + 'rm_1105_wres50_ff_mm_' + _class_ + '.pth'
     test_data = MVTecDataset(root=test_path, transform=data_transform, gt_transform=gt_transform, phase="test")
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
     encoder, bn = wide_resnet50_2(pretrained=True)
@@ -384,40 +440,40 @@ def compute_pro(masks: ndarray, amaps: ndarray, num_th: int = 200) -> None:
     pro_auc = auc(df["fpr"], df["pro"])
     return pro_auc
 
-def detection(encoder, bn, decoder, dataloader,device,_class_):
-    #_, t_bn = resnet50(pretrained=True)
-    bn.load_state_dict(bn.state_dict())
-    bn.eval()
-    #t_bn.to(device)
-    #t_bn.load_state_dict(bn.state_dict())
-    decoder.eval()
-    gt_list_sp = []
-    prmax_list_sp = []
-    prmean_list_sp = []
-    with torch.no_grad():
-        for img, label in dataloader:
+# def detection(encoder, bn, decoder, dataloader,device,_class_):
+#     #_, t_bn = resnet50(pretrained=True)
+#     bn.load_state_dict(bn.state_dict())
+#     bn.eval()
+#     #t_bn.to(device)
+#     #t_bn.load_state_dict(bn.state_dict())
+#     decoder.eval()
+#     gt_list_sp = []
+#     prmax_list_sp = []
+#     prmean_list_sp = []
+#     with torch.no_grad():
+#         for img, label in dataloader:
 
-            img = img.to(device)
-            if img.shape[1] == 1:
-                img = img.repeat(1, 3, 1, 1)
-            label = label.to(device)
-            inputs = encoder(img)
-            outputs = decoder(bn(inputs))
-            anomaly_map, _ = cal_anomaly_map(inputs, outputs, img.shape[-1], 'acc')
-            anomaly_map = gaussian_filter(anomaly_map, sigma=4)
-
-
-            gt_list_sp.extend(label.cpu().data.numpy())
-            prmax_list_sp.append(np.max(anomaly_map))
-            prmean_list_sp.append(np.sum(anomaly_map))#np.sum(anomaly_map.ravel().argsort()[-1:][::-1]))
-
-        gt_list_sp = np.array(gt_list_sp)
-        indx1 = gt_list_sp == _class_
-        indx2 = gt_list_sp != _class_
-        gt_list_sp[indx1] = 0
-        gt_list_sp[indx2] = 1
+#             img = img.to(device)
+#             if img.shape[1] == 1:
+#                 img = img.repeat(1, 3, 1, 1)
+#             label = label.to(device)
+#             inputs = encoder(img)
+#             outputs = decoder(bn(inputs))
+#             anomaly_map, _ = cal_anomaly_map(inputs, outputs, img.shape[-1], 'acc')
+#             anomaly_map = gaussian_filter(anomaly_map, sigma=4)
 
 
-        auroc_sp_max = round(roc_auc_score(gt_list_sp, prmax_list_sp), 4)
-        auroc_sp_mean = round(roc_auc_score(gt_list_sp, prmean_list_sp), 4)
-    return auroc_sp_max, auroc_sp_mean
+#             gt_list_sp.extend(label.cpu().data.numpy())
+#             prmax_list_sp.append(np.max(anomaly_map))
+#             prmean_list_sp.append(np.sum(anomaly_map))#np.sum(anomaly_map.ravel().argsort()[-1:][::-1]))
+
+#         gt_list_sp = np.array(gt_list_sp)
+#         indx1 = gt_list_sp == _class_
+#         indx2 = gt_list_sp != _class_
+#         gt_list_sp[indx1] = 0
+#         gt_list_sp[indx2] = 1
+
+
+#         auroc_sp_max = round(roc_auc_score(gt_list_sp, prmax_list_sp), 4)
+#         auroc_sp_mean = round(roc_auc_score(gt_list_sp, prmean_list_sp), 4)
+#     return auroc_sp_max, auroc_sp_mean
