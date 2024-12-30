@@ -24,11 +24,6 @@ from utils import create_log_file, log_and_print, plot_tsne
 import time
 from tqdm import tqdm
 
-default_n_threads = 8
-os.environ['OPENBLAS_NUM_THREADS'] = f"{default_n_threads}"
-os.environ['MKL_NUM_THREADS'] = f"{default_n_threads}"
-os.environ['OMP_NUM_THREADS'] = f"{default_n_threads}"
-
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -40,8 +35,9 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def train(_class_, item_list):
+def train(_class_, item_list, mode='tra'):
 
+    
     # copy
     class_list = []
     for i in range(len(item_list)):
@@ -54,10 +50,9 @@ def train(_class_, item_list):
     torch.cuda.reset_max_memory_allocated()
 
     # Hyper params:
-    epochs = 10
-    warmup_epochs = 5
-    # learning_rate = 0.005
-    learning_rate = 0.0001
+    epochs = 200
+    warmup_epochs = 10
+    learning_rate = 0.005
     batch_size = 16
     image_size = 256
     num_class = len(class_list)

@@ -28,7 +28,7 @@ def get_data_transforms(size, isize):
     return data_transforms, gt_transforms
 
 # Few-shot query Dataset
-class TestDataset(torch.utils.data.Dataset):
+class MVTecDataset(torch.utils.data.Dataset):
     def __init__(self, root, transform, gt_transform, phase):
         if phase == 'train':
             self.img_path = os.path.join(root, 'train')

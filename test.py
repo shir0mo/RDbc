@@ -51,6 +51,7 @@ def cal_anomaly_map(fs_list, ft_list, out_size=224, amap_mode='mul'):
             anomaly_map *= a_map
         else:
             anomaly_map += a_map
+            
     return anomaly_map, a_map_list
 
 # calculate anomaly score
@@ -122,11 +123,11 @@ def evaluation(encoder, bn, decoder, dataloader, device, shot, _class_=None):
                 # outputs = decoder(bn(inputs))
                 
                 # segmentation
-                # anomaly_map, _ = cal_anomaly_map(inputs, outputs, img.shape[-1], amap_mode='a')
+                # anomaly_map, _ = cal_anomaly_map(btl, _btl, img.shape[-1], amap_mode='a')
                 # anomaly_map = gaussian_filter(anomaly_map, sigma=4)
 
                 # detection
-                anomaly_vector = cal_score(z_support, z_test)
+                anomaly_vector = cal_score(btl, _btl)
 
                 gt[gt > 0.5] = 1
                 gt[gt <= 0.5] = 0
