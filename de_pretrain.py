@@ -85,7 +85,7 @@ def evaluation(encoder, bn, decoder, dataloader, device, _class_=None):
 
                 img = img.to(device)
                 inputs = encoder(img)
-                _btl, z_test, _x = bn(inputs)
+                btl, _, _x = bn(inputs)
 
                 outputs = decoder(bn(inputs))
                 
@@ -150,7 +150,7 @@ def train(_class_, item_list):
  
     data_transform, gt_transform = get_data_transforms(image_size, image_size)
     test_path = '../mvtec/' + _class_
-    ckp_path = '../checkpoints/' + 'wres50_dec_'+ _class_ + '.pth'
+    ckp_path = '../decoder/' + 'wres50_dec_'+ _class_ + '.pth'
 
     # dataset
     train_dataset = ClassificationDataset(train_df)
@@ -190,20 +190,20 @@ def train(_class_, item_list):
             img = img.to(device)
             label = label.to(device, dtype=torch.int64)
             inputs = encoder(img)
-            btl, z, x = bn(inputs)
+            btl, _, x = bn(inputs)
             outputs = decoder(btl)
 
             # 損失計算
             cosloss = loss_fucntion(inputs, outputs)
-            centerloss = F.cross_entropy(x, label)  + center_alpha * center_loss_func(bn, z, label)
-            loss = cosloss + centerloss
+            celoss = F.cross_entropy(x, label)
+            loss = cosloss + celoss
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             update_center(bn, label, center_beta, num_class)
             cosloss_list.append(cosloss.item())
-            centerloss_list.append(centerloss.item())
+            celoss_list.append(celoss.item())
             loss_list.append(loss.item())
 
         print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, epochs, np.mean(loss_list)))
