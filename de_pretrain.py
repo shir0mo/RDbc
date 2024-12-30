@@ -20,6 +20,10 @@ from torch.nn import functional as F
 from loss import center_loss_func, update_center, loss_fucntion, loss_concat
 from utils import create_log_file, log_and_print, plot_tsne
 
+from scipy.ndimage import gaussian_filter
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import auc
+
 import time
 from tqdm import tqdm
 
@@ -87,7 +91,7 @@ def evaluation(encoder, bn, decoder, dataloader, device, _class_=None):
                 inputs = encoder(img)
                 btl, _, _x = bn(inputs)
 
-                outputs = decoder(bn(inputs))
+                outputs = decoder(btl)
                 
                 # segmentation
                 anomaly_map, _ = cal_anomaly_map(inputs, outputs, img.shape[-1], amap_mode='a')
@@ -96,9 +100,6 @@ def evaluation(encoder, bn, decoder, dataloader, device, _class_=None):
                 gt[gt > 0.5] = 1
                 gt[gt <= 0.5] = 0
 
-                if label.item()!=0:
-                    aupro_list.append(compute_pro(gt.squeeze(0).cpu().numpy().astype(int),
-                                                  anomaly_map[np.newaxis,:,:]))
                 gt_list_px.extend(gt.cpu().numpy().astype(int).ravel())
                 pr_list_px.extend(anomaly_map.ravel())
 
@@ -117,7 +118,7 @@ def evaluation(encoder, bn, decoder, dataloader, device, _class_=None):
         auroc_px = round(roc_auc_score(gt_list_px, pr_list_px), 3)
         auroc_sp = round(roc_auc_score(gt_list_sp, pr_list_sp), 3)
 
-    return auroc_px, auroc_sp, round(np.mean(aupro_list),3)
+    return auroc_px, auroc_sp
 
 def train(_class_, item_list):
 
@@ -184,7 +185,7 @@ def train(_class_, item_list):
 
         # watching loss
         cosloss_list = []
-        centerloss_list = []
+        celoss_list = []
 
         for img, label in tqdm(train_dataloader):
             img = img.to(device)
@@ -201,7 +202,7 @@ def train(_class_, item_list):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            update_center(bn, label, center_beta, num_class)
+            # update_center(bn, label, center_beta, num_class)
             cosloss_list.append(cosloss.item())
             celoss_list.append(celoss.item())
             loss_list.append(loss.item())
@@ -209,7 +210,7 @@ def train(_class_, item_list):
         print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, epochs, np.mean(loss_list)))
         
         # eval
-        auroc_px, auroc_sp, aupro_px = evaluation(encoder, bn, decoder, test_dataloader, device, _class_)
+        auroc_px, auroc_sp = evaluation(encoder, bn, decoder, test_dataloader, device, _class_)
         log_and_print('Image level AUCROC: {:.3f}, Pixel level AUCROC: {:.3f}'
                       .format(auroc_sp, auroc_px), log_path)
         
